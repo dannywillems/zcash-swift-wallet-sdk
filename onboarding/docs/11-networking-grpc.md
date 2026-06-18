@@ -87,6 +87,99 @@ contributor adding a feature (for example a transparent balance query via
 that the SDK uses the streaming `GetAddressUtxosStream`, not the unary
 `GetAddressUtxos`, and never uses the `*Nullifiers` block variants.
 
+### Who implements these RPCs (lightwalletd, with zcashd backing)
+
+`CompactTxStreamer` is implemented by `lightwalletd` (Go), not by `zcashd`.
+`zcashd` is the C++ full node; it exposes a JSON-RPC interface and runs no
+gRPC server, so the RPCs in the table above have no implementation in the
+`zcashd` codebase. `lightwalletd` ingests blocks from `zcashd` into its own
+store and serves the compact-block RPCs from there; only a few RPCs proxy a
+live `zcashd` JSON-RPC call. The links below are the actual handler
+implementations, pinned to `lightwalletd` v0.4.19 (commit `028401c`) and
+`zcashd` v6.20.0 (commit `6966f30`).
+
+| Proto RPC                  | lightwalletd handler (`frontend/service.go`)                                                                                                                                                                                                                                             | Direct zcashd JSON-RPC                                                                                                                                                                                                                                           |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GetLatestBlock`           | [`GetLatestBlock`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L70-L90)                                                                                                                                                      | -                                                                                                                                                                                                                                                                |
+| `GetBlock`                 | [`GetBlock`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L168-L189)                                                                                                                                                          | -                                                                                                                                                                                                                                                                |
+| `GetBlockNullifiers`       | [`GetBlockNullifiers`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L193-L225)                                                                                                                                                | -                                                                                                                                                                                                                                                                |
+| `GetBlockRange`            | [`GetBlockRange`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L230-L252)                                                                                                                                                     | -                                                                                                                                                                                                                                                                |
+| `GetBlockRangeNullifiers`  | [`GetBlockRangeNullifiers`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L256-L295)                                                                                                                                           | -                                                                                                                                                                                                                                                                |
+| `GetTransaction`           | [`GetTransaction`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L386-L423)                                                                                                                                                    | [`getrawtransaction`](https://github.com/zcash/zcash/blob/6966f30a8541b0e5998837dce14250ca9e15b16a/src/rpc/rawtransaction.cpp#L340)                                                                                                                              |
+| `SendTransaction`          | [`SendTransaction`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L436-L490)                                                                                                                                                   | [`sendrawtransaction`](https://github.com/zcash/zcash/blob/6966f30a8541b0e5998837dce14250ca9e15b16a/src/rpc/rawtransaction.cpp#L1242)                                                                                                                            |
+| `GetTaddressTxids`         | [`GetTaddressTxids`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L161-L164) -> [`GetTaddressTransactions`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L95-L156) | [`getaddresstxids`](https://github.com/zcash/zcash/blob/6966f30a8541b0e5998837dce14250ca9e15b16a/src/rpc/misc.cpp#L1070)                                                                                                                                         |
+| `GetTaddressBalance`       | [`GetTaddressBalance`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L530-L537)                                                                                                                                                | -                                                                                                                                                                                                                                                                |
+| `GetTaddressBalanceStream` | [`GetTaddressBalanceStream`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L540-L560)                                                                                                                                          | -                                                                                                                                                                                                                                                                |
+| `GetMempoolTx`             | [`GetMempoolTx`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L581-L689)                                                                                                                                                      | [`getrawmempool`](https://github.com/zcash/zcash/blob/6966f30a8541b0e5998837dce14250ca9e15b16a/src/rpc/blockchain.cpp#L409), [`getrawtransaction`](https://github.com/zcash/zcash/blob/6966f30a8541b0e5998837dce14250ca9e15b16a/src/rpc/rawtransaction.cpp#L340) |
+| `GetMempoolStream`         | [`GetMempoolStream`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L562-L568)                                                                                                                                                  | -                                                                                                                                                                                                                                                                |
+| `GetTreeState`             | [`GetTreeState`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L301-L367)                                                                                                                                                      | [`z_gettreestate`](https://github.com/zcash/zcash/blob/6966f30a8541b0e5998837dce14250ca9e15b16a/src/rpc/blockchain.cpp#L1303)                                                                                                                                    |
+| `GetLatestTreeState`       | [`GetLatestTreeState`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L369-L382)                                                                                                                                                | -                                                                                                                                                                                                                                                                |
+| `GetSubtreeRoots`          | [`GetSubtreeRoots`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L813-L881)                                                                                                                                                   | [`z_getsubtreesbyindex`](https://github.com/zcash/zcash/blob/6966f30a8541b0e5998837dce14250ca9e15b16a/src/rpc/blockchain.cpp#L1457)                                                                                                                              |
+| `GetAddressUtxos`          | [`GetAddressUtxos`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L798-L811)                                                                                                                                                   | -                                                                                                                                                                                                                                                                |
+| `GetAddressUtxosStream`    | [`GetAddressUtxosStream`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L883-L892)                                                                                                                                             | -                                                                                                                                                                                                                                                                |
+| `GetLightdInfo`            | [`GetLightdInfo`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L427-L433)                                                                                                                                                     | -                                                                                                                                                                                                                                                                |
+| `Ping`                     | [`Ping`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go#L897-L910)                                                                                                                                                              | -                                                                                                                                                                                                                                                                |
+
+A `-` in the last column means the handler issues no direct `zcashd` JSON-RPC
+call: it answers from `lightwalletd`'s ingested block and mempool store (or
+through internal helpers), and `lightwalletd` ingests that data from `zcashd`
+out of band rather than per request. The line numbers above were read from the
+pinned commits; `lightwalletd` and `zcashd` release on their own cadence, so
+re-resolve them against a newer tag if the upstreams have moved.
+
+### GetSubtreeRoots and GetTreeState vs the incremental Merkle tree
+
+Two of the RPCs above, `GetSubtreeRoots` and `GetTreeState`, only make sense
+once you know the data structure they describe: the note commitment tree.
+
+**Definition 2.6 (note commitment tree).** Each shielded pool (Sapling,
+Orchard) maintains one append-only Merkle tree of fixed depth 32. Its leaves
+are note commitments (`cmu` for Sapling, `cmx` for Orchard) appended in block
+order; the root after the first `k` leaves is the _anchor_ a transaction
+proves membership against. It is an _incremental_ Merkle tree: appending a leaf
+and recomputing the root needs only the rightmost path, not every leaf. The
+Rust implementation is the
+[`incrementalmerkletree`](https://dannywillems.github.io/incrementalmerkletree/)
+crate, with `shardtree` layered on top; this SDK consumes both through the Rust
+backend (see [scan, enhance, fetch](./09-scan-enhance-fetch.md)).
+
+**Definition 2.7 (frontier, returned by GetTreeState).** The _frontier_ of an
+incremental Merkle tree is the minimal node set needed to append the next leaf
+and compute the current root: the rightmost leaf plus one sibling ("ommer") per
+level. `GetTreeState` (zcashd `z_gettreestate`) returns exactly this for a
+given block: `TreeState.saplingTree` and `TreeState.orchardTree`
+(`service.proto#L112-L119`) are the hex-encoded commitment-tree frontiers as of
+the end of that block, alongside `height`, `hash`, and `time`. A wallet started
+at a birthday loads the frontier from its checkpoint's tree state so it can
+build authentication paths for notes found _after_ that height without
+replaying the tree from genesis. In `incrementalmerkletree` terms this is the
+crate's frontier type (see
+[the docs](https://dannywillems.github.io/incrementalmerkletree/)). The SDK
+seeds this on the checkpoint/initialization path (see
+[checkpoints](./16-checkpoints.md)).
+
+**Definition 2.8 (shard and subtree root, streamed by GetSubtreeRoots).**
+`shardtree` splits the depth-32 tree into fixed-height _shards_: complete
+subtrees of height 16, each covering `2^16` = 65536 consecutive leaves (the
+shard height is 16 for both pools in the `shardtree` / `zcash_primitives`
+crates; the top `32 - 16 = 16` levels form the "cap"). A _subtree root_ is the
+Merkle root of one completed shard, addressed in `incrementalmerkletree` by an
+`Address` at level 16. `GetSubtreeRoots` (zcashd `z_getsubtreesbyindex`) streams
+these completed shard roots: each `SubtreeRoot` (`service.proto#L131-L135`)
+carries the 32-byte `rootHash` and the `completingBlockHash` /
+`completingBlockHeight` of the block that filled the shard; the request
+`GetSubtreeRootsArg` (`service.proto#L126-L130`) selects the pool
+(`shieldedProtocol`), a `startIndex` (shard index), and `maxEntries`.
+
+Together the two RPCs let a light wallet build the tree cheaply: the subtree
+roots give the coarse skeleton (one 32-byte hash per 65536 notes), and the tree
+state gives the exact frontier at the wallet's checkpoint so witnesses anchor
+correctly; the wallet then fills in leaf-level detail only for the block ranges
+it actually scans. This is the tree-sync half of "spend before sync." The SDK
+feeds subtree roots to the Rust backend via `putSaplingSubtreeRoots` /
+`putOrchardSubtreeRoots` (driven by `UpdateSubtreeRootsAction`, see
+[scan, enhance, fetch](./09-scan-enhance-fetch.md)).
+
 ## 3. The code
 
 ### The service protocol
@@ -208,6 +301,17 @@ https://github.com/zcash/zcash-swift-wallet-sdk/blob/fe836893bc71fc3e6eb173f4fc1
 - The in-repo proto sources
   (`Sources/ZcashLightClientKit/Modules/Service/GRPC/ProtoBuf/proto/`): the
   authoritative message and RPC definitions for this SDK build.
+- [lightwalletd `frontend/service.go`](https://github.com/zcash/lightwalletd/blob/028401c4c4a7c8c386c81212324cc8083eed7510/frontend/service.go):
+  the actual handler implementations of every `CompactTxStreamer` RPC (pinned
+  to v0.4.19); the only place these gRPC RPCs are implemented.
+- [zcashd `src/rpc/`](https://github.com/zcash/zcash/tree/6966f30a8541b0e5998837dce14250ca9e15b16a/src/rpc):
+  the C++ JSON-RPC methods `lightwalletd` proxies for the RPCs that need live
+  node data (`getrawtransaction`, `sendrawtransaction`, `z_gettreestate`,
+  `z_getsubtreesbyindex`, `getaddresstxids`, `getrawmempool`); pinned to
+  v6.20.0. zcashd has no gRPC server of its own.
+- [`incrementalmerkletree` docs](https://dannywillems.github.io/incrementalmerkletree/):
+  the frontier and subtree (`Address`) structures behind `GetTreeState` and
+  `GetSubtreeRoots`; see Definitions 2.6 to 2.8.
 - [the Tor transport](./12-tor.md) and
   [download and filesystem storage](./08-download-and-filesystem-storage.md):
   the consumers of the streaming block RPCs and the alternative transport.
