@@ -134,19 +134,31 @@ once you know the data structure they describe: the note commitment tree.
 
 **Definition 2.6 (note commitment tree).** Each shielded pool (Sapling,
 Orchard) maintains one append-only Merkle tree of fixed depth 32. Its leaves
-are note commitments (`cmu` for Sapling, `cmx` for Orchard) appended in block
-order; the root after the first `k` leaves is the _anchor_ a transaction
-proves membership against. It is an _incremental_ Merkle tree: appending a leaf
-and recomputing the root needs only the rightmost path, not every leaf. The
-Rust implementation is the
+(level 0) are note commitments (`cmu` for Sapling, `cmx` for Orchard) appended
+strictly left to right in chain order (block, then transaction, then output
+index); a leaf's index from the left is its _position_. An internal node is
+`parent = MerkleCRH(level, left, right)`, where Sapling uses a Pedersen-hash
+combiner over Jubjub and Orchard uses Sinsemilla over Pallas; subtrees with no
+leaves yet hash to precomputed per-level _empty roots_. The root taken over the
+real leaves on the left and empty roots on the right, after the first `k`
+leaves, is the _anchor_ a transaction proves membership against. It is an
+_incremental_ Merkle tree: appending a leaf and recomputing the root needs only
+the rightmost path, not every leaf. The Rust implementation is the
 [`incrementalmerkletree`](https://dannywillems.github.io/incrementalmerkletree/)
 crate, with `shardtree` layered on top; this SDK consumes both through the Rust
 backend (see [scan, enhance, fetch](./09-scan-enhance-fetch.md)).
 
 **Definition 2.7 (frontier, returned by GetTreeState).** The _frontier_ of an
 incremental Merkle tree is the minimal node set needed to append the next leaf
-and compute the current root: the rightmost leaf plus one sibling ("ommer") per
-level. `GetTreeState` (zcashd `z_gettreestate`) returns exactly this for a
+and compute the current root: the most-recently-appended leaf plus, for each
+level where the current position is a right child, the hash of its already
+filled left sibling (an "ommer"). To append the next leaf you combine it upward
+with those ommers where you are a right child and with empty-subtree roots
+where the right side is still empty; to read the current root you hash the
+frontier up against the empty roots. Its size is `O(depth)` (about 32 hashes)
+whether the tree holds a thousand leaves or a hundred million, which is the
+bandwidth win. `GetTreeState` (zcashd `z_gettreestate`) returns exactly this
+for a
 given block: `TreeState.saplingTree` and `TreeState.orchardTree`
 (`service.proto#L112-L119`) are the hex-encoded commitment-tree frontiers as of
 the end of that block, alongside `height`, `hash`, and `time`. A wallet started
@@ -169,16 +181,27 @@ these completed shard roots: each `SubtreeRoot` (`service.proto#L131-L135`)
 carries the 32-byte `rootHash` and the `completingBlockHash` /
 `completingBlockHeight` of the block that filled the shard; the request
 `GetSubtreeRootsArg` (`service.proto#L126-L130`) selects the pool
-(`shieldedProtocol`), a `startIndex` (shard index), and `maxEntries`.
+(`shieldedProtocol`), a `startIndex` (shard index), and `maxEntries`. Shard `i`
+covers leaf positions `[i*2^16, (i+1)*2^16)`, the node at
+`Address(level = 16, index = i)`, and its root is published only once the shard
+is _completed_ (all 65536 leaves present). The last, still-filling shard at the
+chain tip is therefore not in this stream: its state comes from the frontier
+(`GetTreeState`) plus the leaves the wallet scans.
 
-Together the two RPCs let a light wallet build the tree cheaply: the subtree
-roots give the coarse skeleton (one 32-byte hash per 65536 notes), and the tree
-state gives the exact frontier at the wallet's checkpoint so witnesses anchor
-correctly; the wallet then fills in leaf-level detail only for the block ranges
-it actually scans. This is the tree-sync half of "spend before sync." The SDK
-feeds subtree roots to the Rust backend via `putSaplingSubtreeRoots` /
-`putOrchardSubtreeRoots` (driven by `UpdateSubtreeRootsAction`, see
-[scan, enhance, fetch](./09-scan-enhance-fetch.md)).
+Together the two RPCs let a light wallet build the tree cheaply. It inserts the
+streamed subtree roots into the _cap_ (the top 16 levels) to get the tree's
+skeleton up to the tip, and seeds the frontier from its checkpoint's tree state
+so its own appends land at the correct positions and the recomputed root
+matches consensus. It then downloads leaf-level data (compact blocks) only for
+the shard(s) holding its own notes: witnessing one note needs that shard's
+leaves plus the roots of the sibling shards, not the other 65535 commitments in
+the shard. This is the tree-sync half of "spend before sync." It is also
+self-checking: the root the wallet recomputes from the cap roots, the frontier,
+and its filled shard must equal the on-chain anchor, so a `lightwalletd` that
+streams wrong subtree roots produces a witness against an anchor no block ever
+had, and the resulting spend is rejected. The SDK feeds subtree roots to the
+Rust backend via `putSaplingSubtreeRoots` / `putOrchardSubtreeRoots` (driven by
+`UpdateSubtreeRootsAction`, see [scan, enhance, fetch](./09-scan-enhance-fetch.md)).
 
 ## 3. The code
 
