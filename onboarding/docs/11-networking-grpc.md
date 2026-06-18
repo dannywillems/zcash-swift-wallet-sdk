@@ -42,11 +42,50 @@ excluded from the build target (see `Package.swift` exclude list).
 next regeneration and the SDK's `.swiftlint.yml` excludes these files for that
 reason.
 
-The main RPC surface, read from the `LightWalletService` protocol:
-`getInfo`, `latestBlock` / `latestBlockHeight`, `blockRange` (streaming),
-`submit`, `fetchTransaction`, `fetchUTXOs` (streaming), `blockStream`
-(streaming), `getSubtreeRoots` (streaming), `getTreeState`,
-`getTaddressTxids` (streaming), and `getMempoolStream` (streaming).
+**Definition 2.5 (CompactTxStreamer).** `CompactTxStreamer` is the gRPC
+service `lightwalletd` exposes (declared at `service.proto#L156-L212`). The
+Swift gRPC plugin generates an async client for it,
+`CompactTxStreamerAsyncClient`, which `LightWalletGRPCService` holds and is the
+only type in the SDK that issues RPCs. Each method on `LightWalletService`
+is implemented by calling one method on this client.
+
+### The full CompactTxStreamer surface
+
+The service declares 19 RPCs. The SDK calls 10 of them; the other 9 exist in
+the generated client but are never invoked (they are served for other
+`lightwalletd` clients such as full-wallet or block-explorer use). The table
+below is the complete service, taken from `service.proto#L156-L212`, with the
+generated client method and the `LightWalletService` entry point that drives
+it on the direct gRPC path. "Kind" is the gRPC call shape: a server stream
+yields many responses, a client stream sends many requests.
+
+| Proto RPC                  | Request -> Response                                 | Kind          | Generated method           | Driven by (LightWalletService)                     |
+| -------------------------- | --------------------------------------------------- | ------------- | -------------------------- | -------------------------------------------------- |
+| `GetLatestBlock`           | `ChainSpec` -> `BlockID`                            | unary         | `getLatestBlock`           | `latestBlock`, `latestBlockHeight`                 |
+| `GetBlock`                 | `BlockID` -> `CompactBlock`                         | unary         | `getBlock`                 | not used by this SDK                               |
+| `GetBlockNullifiers`       | `BlockID` -> `CompactBlock`                         | unary         | `getBlockNullifiers`       | not used by this SDK                               |
+| `GetBlockRange`            | `BlockRange` -> `CompactBlock`                      | server stream | `getBlockRange`            | `blockRange`, `blockStream`                        |
+| `GetBlockRangeNullifiers`  | `BlockRange` -> `CompactBlock`                      | server stream | `getBlockRangeNullifiers`  | not used by this SDK                               |
+| `GetTransaction`           | `TxFilter` -> `RawTransaction`                      | unary         | `getTransaction`           | `fetchTransaction`                                 |
+| `SendTransaction`          | `RawTransaction` -> `SendResponse`                  | unary         | `sendTransaction`          | `submit`                                           |
+| `GetTaddressTxids`         | `TransparentAddressBlockFilter` -> `RawTransaction` | server stream | `getTaddressTxids`         | `getTaddressTxids`                                 |
+| `GetTaddressBalance`       | `AddressList` -> `Balance`                          | unary         | `getTaddressBalance`       | not used by this SDK                               |
+| `GetTaddressBalanceStream` | `Address` -> `Balance`                              | client stream | `getTaddressBalanceStream` | not used by this SDK                               |
+| `GetMempoolTx`             | `Exclude` -> `CompactTx`                            | server stream | `getMempoolTx`             | not used by this SDK                               |
+| `GetMempoolStream`         | `Empty` -> `RawTransaction`                         | server stream | `getMempoolStream`         | `getMempoolStream`                                 |
+| `GetTreeState`             | `BlockID` -> `TreeState`                            | unary         | `getTreeState`             | `getTreeState`                                     |
+| `GetLatestTreeState`       | `Empty` -> `TreeState`                              | unary         | `getLatestTreeState`       | not used by this SDK                               |
+| `GetSubtreeRoots`          | `GetSubtreeRootsArg` -> `SubtreeRoot`               | server stream | `getSubtreeRoots`          | `getSubtreeRoots`                                  |
+| `GetAddressUtxos`          | `GetAddressUtxosArg` -> `GetAddressUtxosReplyList`  | unary         | `getAddressUtxos`          | not used by this SDK                               |
+| `GetAddressUtxosStream`    | `GetAddressUtxosArg` -> `GetAddressUtxosReply`      | server stream | `getAddressUtxosStream`    | `fetchUTXOs`                                       |
+| `GetLightdInfo`            | `Empty` -> `LightdInfo`                             | unary         | `getLightdInfo`            | `getInfo`                                          |
+| `Ping`                     | `Duration` -> `PingResponse`                        | unary         | `ping`                     | not used (test-only; needs `--ping-very-insecure`) |
+
+The "not used by this SDK" rows are still part of the generated client, so a
+contributor adding a feature (for example a transparent balance query via
+`GetTaddressBalance`) can call them without regenerating anything. Note also
+that the SDK uses the streaming `GetAddressUtxosStream`, not the unary
+`GetAddressUtxos`, and never uses the `*Nullifiers` block variants.
 
 ## 3. The code
 
@@ -85,6 +124,26 @@ from an endpoint.
 https://github.com/zcash/zcash-swift-wallet-sdk/blob/fe836893bc71fc3e6eb173f4fc191aa43c3760af/Sources/ZcashLightClientKit/Modules/Service/LightWalletService.swift#L137-L143
 ```
 
+### The generated CompactTxStreamer client
+
+`LightWalletGRPCService` holds the generated `CompactTxStreamerAsyncClient`
+behind a lazily-connected accessor. The backing field is created on first use,
+not at construction, so building the service does not open a socket.
+
+```swift reference title="Sources/ZcashLightClientKit/Modules/Service/GRPC/LightWalletGRPCService.swift"
+https://github.com/zcash/zcash-swift-wallet-sdk/blob/fe836893bc71fc3e6eb173f4fc191aa43c3760af/Sources/ZcashLightClientKit/Modules/Service/GRPC/LightWalletGRPCService.swift#L62-L65
+```
+
+`resolveLazyConnect()` builds the channel (`ClientConnection` with
+platform-appropriate TLS when `secure`, insecure otherwise), attaches a
+keepalive and the connectivity-state delegate, and wraps it in a
+`CompactTxStreamerAsyncClient`. Every RPC method in the table above is called
+on the instance this returns.
+
+```swift reference title="Sources/ZcashLightClientKit/Modules/Service/GRPC/LightWalletGRPCService.swift"
+https://github.com/zcash/zcash-swift-wallet-sdk/blob/fe836893bc71fc3e6eb173f4fc191aa43c3760af/Sources/ZcashLightClientKit/Modules/Service/GRPC/LightWalletGRPCService.swift#L143-L168
+```
+
 ### gRPC methods mapped to RPCs
 
 `blockRange` opens a server-streaming `getBlockRange` call and wraps each
@@ -108,10 +167,13 @@ https://github.com/zcash/zcash-swift-wallet-sdk/blob/fe836893bc71fc3e6eb173f4fc1
 ### The proto service definition
 
 The Swift methods correspond one-to-one to RPCs in the `CompactTxStreamer`
-service. `blockRange` maps to `GetBlockRange`, `submit` to `SendTransaction`,
-`getSubtreeRoots` to `GetSubtreeRoots`, and so on. The `.proto` is in the repo
-at the path below; it is excluded from the build and used only for code
-generation.
+service; the complete mapping is the table in section 2 (`blockRange` ->
+`GetBlockRange`, `submit` -> `SendTransaction`, `getSubtreeRoots` ->
+`GetSubtreeRoots`, and so on). The `.proto` below is the authoritative source
+for that table; it is excluded from the build and used only for code
+generation. Read it alongside the table to see the per-RPC comments (for
+example, the note that `GetTaddressTxids` returns transactions despite its
+name).
 
 ```protobuf reference title="Sources/ZcashLightClientKit/Modules/Service/GRPC/ProtoBuf/proto/service.proto"
 https://github.com/zcash/zcash-swift-wallet-sdk/blob/fe836893bc71fc3e6eb173f4fc191aa43c3760af/Sources/ZcashLightClientKit/Modules/Service/GRPC/ProtoBuf/proto/service.proto#L156-L212
@@ -163,6 +225,10 @@ https://github.com/zcash/zcash-swift-wallet-sdk/blob/fe836893bc71fc3e6eb173f4fc1
 .direct)` and asserts the returned height is greater than the testnet
    Sapling activation height; run the NetworkTests target and confirm it
    passes.
+4. Using the table in section 2, list the nine `CompactTxStreamer` RPCs the
+   SDK never calls, and confirm your list by grepping
+   `LightWalletGRPCService.swift` for `compactTxStreamer.` and comparing the
+   ten methods found against the 19 in `service.proto`.
 
 ### Answers in the code
 
@@ -176,6 +242,14 @@ https://github.com/zcash/zcash-swift-wallet-sdk/blob/fe836893bc71fc3e6eb173f4fc1
 3. The existing `testLatestBlock` at
    `LightWalletServiceTests.swift#L70-L72` shows the `latestBlockHeight(mode:)`
    call shape to model your new test on.
+4. The ten called RPCs are the `compactTxStreamer.<method>` calls in
+   `LightWalletGRPCService.swift` (`getLatestBlock`, `getLightdInfo`,
+   `getBlockRange`, `sendTransaction`, `getTransaction`,
+   `getAddressUtxosStream`, `getMempoolStream`, `getSubtreeRoots`,
+   `getTreeState`, `getTaddressTxids`). The nine never called are `GetBlock`,
+   `GetBlockNullifiers`, `GetBlockRangeNullifiers`, `GetTaddressBalance`,
+   `GetTaddressBalanceStream`, `GetMempoolTx`, `GetLatestTreeState`,
+   `GetAddressUtxos` (the unary variant), and `Ping`.
 
 ## 7. Further reading
 
