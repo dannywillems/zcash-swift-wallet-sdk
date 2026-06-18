@@ -90,3 +90,17 @@ BuildSupport/products/
 .claude/settings.local.json
 .remember/
 .worktrees/
+
+# Onboarding course (Docusaurus) build artefacts
+/onboarding/build/
+/onboarding/.docusaurus/
+/onboarding/node_modules/
+
+# Stray Docusaurus output if a local build is ever copied to the repo root.
+/404.html
+/index.html
+/sitemap.xml
+/search-index.json
+/.nojekyll
+/assets/
+/img/

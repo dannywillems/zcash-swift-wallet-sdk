@@ -1,0 +1,50 @@
+{
+  "name": "zcash-swift-wallet-sdk-onboarding",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Code-anchored onboarding course for the ZcashLightClientKit Swift wallet SDK.",
+  "engines": {
+    "node": ">=20.0"
+  },
+  "scripts": {
+    "postinstall": "patch-package"
+  },
+  "dependencies": {
+    "@docusaurus/core": "^3.10.1",
+    "@docusaurus/faster": "^3.10.1",
+    "@docusaurus/preset-classic": "^3.10.1",
+    "@easyops-cn/docusaurus-search-local": "^0.55.2",
+    "docusaurus-theme-github-codeblock": "^2.0.2",
+    "katex": "^0.16.47",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "^3.10.1",
+    "@docusaurus/tsconfig": "^3.10.1",
+    "@docusaurus/types": "^3.10.1",
+    "patch-package": "^8.0.1",
+    "prettier": "^3.0.0",
+    "typescript": "~5.6.0"
+  },
+  "overrides": {
+    "serialize-javascript": "^7.0.6",
+    "uuid": "^11.1.1",
+    "js-yaml": "^4.2.0"
+  },
+  "browserslist": {
+    "production": [
+      ">0.5%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 3 chrome version",
+      "last 3 firefox version",
+      "last 5 safari version"
+    ]
+  }
+}

@@ -1,0 +1,57 @@
+/**
+ * Custom styles for the ZcashLightClientKit onboarding course.
+ */
+
+:root {
+  --ifm-color-primary: #b8860b;
+  --ifm-color-primary-dark: #a6790a;
+  --ifm-color-primary-darker: #9d7209;
+  --ifm-color-primary-darkest: #815e08;
+  --ifm-color-primary-light: #ca930c;
+  --ifm-color-primary-lighter: #d39b1a;
+  --ifm-color-primary-lightest: #dba93b;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #f0c14b;
+  --ifm-color-primary-dark: #edb52e;
+  --ifm-color-primary-darker: #ecaf1f;
+  --ifm-color-primary-darkest: #c79111;
+  --ifm-color-primary-light: #f3cd68;
+  --ifm-color-primary-lighter: #f4d377;
+  --ifm-color-primary-lightest: #f7e2a4;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/*
+ * Pin the disclaimer announcement bar to the top of the viewport. Docusaurus
+ * lets the bar scroll out of view by default, which defeats the purpose of an
+ * always-visible "this site may be wrong" notice. Fix it, push the navbar
+ * down by the bar height, and fix anchor-jump padding so headings are not
+ * hidden behind the pinned bar.
+ */
+div[class^='announcementBar_'] {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: calc(var(--ifm-z-index-fixed) + 1);
+  height: var(--docusaurus-announcement-bar-height, 40px);
+}
+
+.navbar {
+  top: var(--docusaurus-announcement-bar-height, 40px);
+}
+
+html {
+  scroll-padding-top: calc(
+    var(--ifm-navbar-height) + var(--docusaurus-announcement-bar-height, 40px)
+  );
+}
+
+/* Keep the fixed sidebar and main content clear of the pinned bar. */
+.main-wrapper {
+  margin-top: var(--docusaurus-announcement-bar-height, 40px);
+}
